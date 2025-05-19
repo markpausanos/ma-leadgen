@@ -1,18 +1,29 @@
 'use server';
 
 import { genAI, GENERATIVE_MODEL_NAME } from '@/lib/googleAi';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as csv from 'csv-parse/sync';
 import { Type } from '@google/genai';
+import * as csv from 'csv-parse/sync';
 
-function getSicCodes() {
-	const csvPath = path.join(process.cwd(), 'public/sic-codes.csv');
-	const fileContent = fs.readFileSync(csvPath, 'utf-8');
-	return csv.parse(fileContent, {
-		columns: true,
-		skip_empty_lines: true,
-	});
+async function getSicCodes() {
+	try {
+		const response = await fetch(
+			new URL(
+				'/sic-codes.csv',
+				process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+			)
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch SIC codes: ${response.status}`);
+		}
+		const fileContent = await response.text();
+		return csv.parse(fileContent, {
+			columns: true,
+			skip_empty_lines: true,
+		});
+	} catch (error) {
+		console.error('Error fetching SIC codes:', error);
+		throw error;
+	}
 }
 
 export async function findRelevantSicCodes(query: string) {
@@ -22,7 +33,7 @@ export async function findRelevantSicCodes(query: string) {
 
 	try {
 		// 1. Get all SIC codes data
-		const sicCodes = getSicCodes();
+		const sicCodes = await getSicCodes();
 
 		// 2. Create a context string from SIC codes data
 		const sicCodesContext = sicCodes
