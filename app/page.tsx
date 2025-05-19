@@ -1,10 +1,10 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { findRelevantSicCodes } from './actions/sic-codes';
+import { findRelevantSicCodes } from '@/actions/sic-codes';
 import {
 	searchCompaniesBySicCodes,
 	getCompanyOfficers,
-} from './actions/companies-house';
+} from '@/actions/companies-house';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -135,131 +135,6 @@ export default function Home() {
 		} finally {
 			setIsLoading(false);
 		}
-	};
-
-	const fetchOfficers = async (companyNumber: string) => {
-		if (loadingOfficers.includes(companyNumber)) return;
-
-		setLoadingOfficers((prev) => [...prev, companyNumber]);
-		try {
-			const result = await getCompanyOfficers(companyNumber);
-			setCompanies((prev) =>
-				prev.map((company) =>
-					company.number === companyNumber
-						? { ...company, officers: result.officers }
-						: company
-				)
-			);
-		} catch (error) {
-			console.error('Error fetching officers:', error);
-			// Handle error appropriately
-		} finally {
-			setLoadingOfficers((prev) => prev.filter((num) => num !== companyNumber));
-		}
-	};
-
-	const findEmails = async () => {
-		// Mock email finding process using Seamless.ai
-		setEmailSearchProgress(0);
-		const totalCompanies = results.length;
-
-		for (let i = 0; i < results.length; i++) {
-			setResults((prev) =>
-				prev.map((company, index) =>
-					index === i ? { ...company, status: 'searching' } : company
-				)
-			);
-
-			// Simulate API call delay
-			await new Promise((resolve) => setTimeout(resolve, 1500));
-
-			// Mock finding contacts
-			setResults((prev) =>
-				prev.map((company, index) => {
-					if (index === i) {
-						return {
-							...company,
-							status: 'found',
-							contacts: [
-								{
-									name: 'John Smith',
-									position: 'CEO',
-									email:
-										'j.smith@' +
-										company.name.toLowerCase().replace(/ /g, '') +
-										'.com',
-									confidence: 85,
-								},
-								{
-									name: 'Sarah Johnson',
-									position: 'CTO',
-									email:
-										's.johnson@' +
-										company.name.toLowerCase().replace(/ /g, '') +
-										'.com',
-									confidence: 75,
-								},
-							],
-						};
-					}
-					return company;
-				})
-			);
-
-			setEmailSearchProgress(((i + 1) / totalCompanies) * 100);
-		}
-	};
-
-	const downloadCSV = () => {
-		if (results.length === 0) return;
-
-		// Create CSV content with contact information
-		const headers = [
-			'Company Name',
-			'SIC Code',
-			'Registration Date',
-			'Contact Name',
-			'Position',
-			'Email',
-			'Confidence Score',
-		];
-		const rows = results.flatMap((company) =>
-			company.contacts.length > 0
-				? company.contacts.map((contact) =>
-						[
-							company.name,
-							company.sic,
-							company.registered,
-							contact.name,
-							contact.position,
-							contact.email,
-							contact.confidence + '%',
-						].join(',')
-				  )
-				: [
-						[
-							company.name,
-							company.sic,
-							company.registered,
-							'No contacts found',
-							'',
-							'',
-							'',
-						].join(','),
-				  ]
-		);
-
-		const csvContent = [headers.join(','), ...rows].join('\n');
-
-		// Create download link
-		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement('a');
-		link.setAttribute('href', url);
-		link.setAttribute('download', 'company_contacts.csv');
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
 	};
 
 	// Fetch all officers for companies in the current page
