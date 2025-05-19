@@ -1,13 +1,13 @@
 'use server';
 
-import { genAI, GENERATIVE_MODEL_NAME } from '../lib/googleAi';
+import { genAI, GENERATIVE_MODEL_NAME } from '@/lib/googleAi';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as csv from 'csv-parse/sync';
 import { Type } from '@google/genai';
 
 function getSicCodes() {
-	const csvPath = path.join(process.cwd(), 'app/lib/sic-codes.csv');
+	const csvPath = path.join(process.cwd(), 'public/sic-codes.csv');
 	const fileContent = fs.readFileSync(csvPath, 'utf-8');
 	return csv.parse(fileContent, {
 		columns: true,
