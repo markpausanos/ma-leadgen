@@ -1,19 +1,23 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { findRelevantSicCodes } from '@/actions/sic-codes';
 import {
 	searchCompaniesBySicCodes,
 	getCompanyOfficers,
 } from '@/actions/companies-house';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import { enrichPersonData } from '@/actions/apollo-actions';
+import {
+	SicCode,
+	Company,
+	CompanyOfficer,
+	escapeCSV,
+} from '@/components/types';
 
-interface SicCode {
-	sic: string;
-	description: string;
-}
+// Import step components
+import Step1SicSearch from '@/components/steps/Step1SicSearch';
+import Step2SicSelection from '@/components/steps/Step2SicSelection';
+import Step3CompanyResults from '@/components/steps/Step3CompanyResults';
+import Step4CompanyOfficers from '@/components/steps/Step4CompanyOfficers';
+import Step5ApolloEnrichment from '@/components/steps/Step5ApolloEnrichment';
 
 interface CompanyContact {
 	name: string;
@@ -30,45 +34,7 @@ interface CompanyResult {
 	status: 'pending' | 'searching' | 'found' | 'not_found';
 }
 
-interface CompanyOfficer {
-	name: string;
-	role: string;
-	appointedOn: string;
-	occupation?: string;
-	nationality?: string;
-	countryOfResidence?: string;
-}
-
-interface Company {
-	number: string;
-	name: string;
-	status: string;
-	type: string;
-	address?: {
-		address_line_1?: string;
-		address_line_2?: string;
-		locality?: string;
-		postal_code?: string;
-		region?: string;
-		country?: string;
-	};
-	incorporationDate: string;
-	sicCodes?: string[];
-	officers?: CompanyOfficer[];
-}
-
-// Utility to escape CSV fields
-function escapeCSV(value: string) {
-	if (value == null) return '';
-	const str = String(value);
-	if (/[",\n]/.test(str)) {
-		return '"' + str.replace(/"/g, '""') + '"';
-	}
-	return str;
-}
-
 export default function Home() {
-	const [prompt, setPrompt] = useState('');
 	const [sicCodes, setSicCodes] = useState<SicCode[]>([]);
 	const [selectedSicCodes, setSelectedSicCodes] = useState<string[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
@@ -81,31 +47,20 @@ export default function Home() {
 	const [showStep3, setShowStep3] = useState(true);
 	const [showStep4, setShowStep4] = useState(false);
 	const [isFetchingOfficers, setIsFetchingOfficers] = useState(false);
-	const [maxResults, setMaxResults] = useState<number>(100);
+	const [maxResults, setMaxResults] = useState<number>(10);
 	const [hasSearched, setHasSearched] = useState(false);
+	const [isEnrichingContacts, setIsEnrichingContacts] = useState(false);
+	const [showStep5, setShowStep5] = useState(false);
+	const [enrichedOfficers, setEnrichedOfficers] = useState<CompanyOfficer[]>(
+		[]
+	);
 
-	const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
-		e.preventDefault();
-		setIsLoading(true);
-		setHasSearched(false);
+	const handleSicCodesFound = (foundSicCodes: SicCode[]) => {
+		setSicCodes(foundSicCodes);
 		setCompanies([]);
 		setTotalResults(0);
 		setCurrentPage(0);
-
-		try {
-			const result = await findRelevantSicCodes(prompt);
-			if (result.error) {
-				console.error(result.error);
-				setSicCodes([]);
-			} else {
-				setSicCodes(result.sicCodes || []);
-			}
-		} catch (error) {
-			console.error('Error searching SIC codes:', error);
-			setSicCodes([]);
-		} finally {
-			setIsLoading(false);
-		}
+		setHasSearched(false);
 	};
 
 	const toggleSicCode = (code: string) => {
@@ -137,6 +92,19 @@ export default function Home() {
 		}
 	};
 
+	// Handle page change in Step 3
+	const handlePageChange = (newPage: number) => {
+		setCurrentPage(newPage);
+		// We'll trigger the fetch in the useEffect below
+	};
+
+	// Re-fetch companies when page changes
+	useEffect(() => {
+		if (hasSearched && selectedSicCodes.length > 0) {
+			fetchCompanies();
+		}
+	}, [currentPage]);
+
 	// Fetch all officers for companies in the current page
 	const fetchAllOfficers = async () => {
 		setIsFetchingOfficers(true);
@@ -153,10 +121,34 @@ export default function Home() {
 				try {
 					// First company doesn't need a delay
 					const result = await getCompanyOfficers(company.number, i === 0);
+
+					// Parse officer names into first and last name
+					const parsedOfficers = result.officers.map((officer) => {
+						let firstName = '';
+						let lastName = '';
+
+						if (officer.name && officer.name.includes(',')) {
+							const [last, first] = officer.name.split(',');
+							lastName = last.trim();
+							firstName = (first || '').trim();
+						} else if (officer.name) {
+							const [first, ...rest] = officer.name.split(' ');
+							firstName = first;
+							lastName = rest.join(' ');
+						}
+
+						return {
+							...officer,
+							firstName,
+							lastName,
+							enriched: false,
+						};
+					});
+
 					setCompanies((prev) =>
 						prev.map((c) =>
 							c.number === company.number
-								? { ...c, officers: result.officers }
+								? { ...c, officers: parsedOfficers }
 								: c
 						)
 					);
@@ -173,56 +165,99 @@ export default function Home() {
 		}
 	};
 
-	// Download officers as CSV
-	const downloadOfficersCSV = () => {
-		const headers = [
-			'Company Name',
-			'Company Number',
-			'Officer First Name',
-			'Officer Last Name',
-			'Role',
-			'Appointed On',
-			'Occupation',
-			'Nationality',
-			'Country of Residence',
-		];
-		const rows = companies.flatMap((company) =>
-			company.officers && company.officers.length > 0
-				? company.officers.map((officer) => {
-						let firstName = '';
-						let lastName = '';
-						if (officer.name && officer.name.includes(',')) {
-							const [last, first] = officer.name.split(',');
-							lastName = last.trim();
-							firstName = (first || '').trim();
-						} else if (officer.name) {
-							const [first, ...rest] = officer.name.split(' ');
-							firstName = first;
-							lastName = rest.join(' ');
+	// Get unique officers across all companies
+	const getUniqueOfficers = () => {
+		// Create a map to track unique officers
+		const uniqueOfficers = new Map();
+
+		companies.forEach((company) => {
+			if (company.officers && company.officers.length > 0) {
+				company.officers.forEach((officer) => {
+					if (officer.firstName && officer.lastName) {
+						const key = `${officer.firstName.toLowerCase()}-${officer.lastName.toLowerCase()}`;
+
+						// Only add if not already in the map
+						if (!uniqueOfficers.has(key)) {
+							uniqueOfficers.set(key, {
+								...officer,
+								companyName: company.name,
+								companyNumber: company.number,
+							});
 						}
-						return [
-							escapeCSV(company.name),
-							escapeCSV(company.number),
-							escapeCSV(firstName),
-							escapeCSV(lastName),
-							escapeCSV(officer.role),
-							escapeCSV(officer.appointedOn),
-							escapeCSV(officer.occupation || ''),
-							escapeCSV(officer.nationality || ''),
-							escapeCSV(officer.countryOfResidence || ''),
-						].join(',');
-				  })
-				: []
-		);
-		const csvContent = [headers.join(','), ...rows].join('\n');
-		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement('a');
-		link.setAttribute('href', url);
-		link.setAttribute('download', 'company_officers.csv');
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
+					}
+				});
+			}
+		});
+
+		return Array.from(uniqueOfficers.values());
+	};
+
+	// Enrich officer data using Apollo
+	const enrichOfficerData = async () => {
+		setIsEnrichingContacts(true);
+		setShowStep5(true);
+		setEnrichedOfficers([]); // Reset the list
+
+		const uniqueOfficers = getUniqueOfficers();
+		console.log(`Processing ${uniqueOfficers.length} unique officers`);
+
+		try {
+			// Process one by one
+			for (let i = 0; i < uniqueOfficers.length; i++) {
+				const officer = uniqueOfficers[i];
+
+				console.log(
+					`Processing officer ${i + 1}/${uniqueOfficers.length}: ${
+						officer.firstName
+					} ${officer.lastName}`
+				);
+
+				const personData = {
+					first_name: officer.firstName || '',
+					last_name: officer.lastName || '',
+					organization_name: officer.companyName,
+				};
+
+				// Call Apollo API with CSV file path
+				const result = await enrichPersonData(personData);
+
+				// Skip if no person data
+				if (!result.data?.person) {
+					console.log(
+						`No data returned for ${personData.first_name} ${personData.last_name}`
+					);
+					continue;
+				}
+
+				const apolloPerson = result.data.person;
+				const email = apolloPerson.email || '';
+
+				console.log(
+					`Got data for ${apolloPerson.first_name} ${
+						apolloPerson.last_name
+					}, email: ${email || 'none'}`
+				);
+
+				// Create enriched officer
+				const enrichedOfficer = {
+					...officer,
+					enriched: true,
+					enrichedData: result.data,
+				};
+
+				// Add to list immediately
+				setEnrichedOfficers((prev) => [...prev, enrichedOfficer]);
+
+				// Add a small delay to avoid rate limiting
+				if (i < uniqueOfficers.length - 1) {
+					await new Promise((resolve) => setTimeout(resolve, 5000));
+				}
+			}
+		} catch (error) {
+			console.error('Error enriching officer data:', error);
+		} finally {
+			setIsEnrichingContacts(false);
+		}
 	};
 
 	return (
@@ -239,308 +274,52 @@ export default function Home() {
 
 				<main className="space-y-6">
 					{/* Step 1: SIC Code Search */}
-					<section className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-						<h2 className="text-2xl font-semibold mb-4 text-gray-900">
-							Step 1: Find SIC Codes
-						</h2>
-						<form onSubmit={handleSearch} className="space-y-4">
-							<div className="space-y-2">
-								<Label htmlFor="prompt">
-									Describe the business activity or industry:
-								</Label>
-								<Input
-									id="prompt"
-									type="text"
-									value={prompt}
-									onChange={(e) => setPrompt(e.target.value)}
-									placeholder="e.g. Software development for financial services"
-									required
-								/>
-							</div>
-							<Button
-								type="submit"
-								disabled={isLoading}
-								className="w-full sm:w-auto"
-							>
-								{isLoading ? 'Searching...' : 'Search SIC Codes'}
-							</Button>
-						</form>
-					</section>
+					<Step1SicSearch onSicCodesFound={handleSicCodesFound} />
 
 					{/* Step 2: SIC Code Selection */}
 					{sicCodes.length > 0 && (
-						<section className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-							<h2 className="text-2xl font-semibold mb-4 text-gray-900">
-								Step 2: Select Relevant SIC Codes
-							</h2>
-							<div className="space-y-3">
-								{sicCodes.map((sic) => (
-									<div
-										key={sic.sic}
-										className="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition"
-										onClick={() => toggleSicCode(sic.sic)}
-									>
-										<Checkbox
-											id={`sic-${sic.sic}`}
-											checked={selectedSicCodes.includes(sic.sic)}
-											onCheckedChange={() => toggleSicCode(sic.sic)}
-										/>
-										<div className="ml-4">
-											<span className="font-medium text-gray-900">
-												{sic.sic}
-											</span>
-											<span className="mx-2 text-gray-400">-</span>
-											<span className="text-gray-600">{sic.description}</span>
-										</div>
-									</div>
-								))}
-							</div>
-							<div className="mt-6">
-								<Button
-									onClick={fetchCompanies}
-									disabled={selectedSicCodes.length === 0 || isLoading}
-									className="w-full sm:w-auto"
-								>
-									{isLoading ? 'Fetching...' : 'Find Companies'}
-								</Button>
-							</div>
-						</section>
+						<Step2SicSelection
+							sicCodes={sicCodes}
+							selectedSicCodes={selectedSicCodes}
+							onToggleSicCode={toggleSicCode}
+							onFindCompanies={fetchCompanies}
+							isLoading={isLoading}
+						/>
 					)}
 
 					{/* Step 3: Company Results */}
 					{selectedSicCodes.length > 0 && (
-						<section className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-							<div className="flex items-center justify-between mb-4">
-								<h2 className="text-2xl font-semibold text-gray-900">
-									Step 3: Company Results
-								</h2>
-								<Button
-									variant="ghost"
-									size="sm"
-									onClick={() => setShowStep3((v) => !v)}
-								>
-									{showStep3 ? 'Close' : 'Open'}
-								</Button>
-							</div>
-							{showStep3 && (
-								<>
-									<div className="mb-4 space-y-2">
-										<Label htmlFor="maxResults">
-											Maximum number of companies to search (max 5000):
-										</Label>
-										<div className="flex gap-2">
-											<Input
-												id="maxResults"
-												type="number"
-												min="1"
-												max="5000"
-												value={maxResults}
-												onChange={(e) =>
-													setMaxResults(
-														Math.min(
-															5000,
-															Math.max(1, parseInt(e.target.value) || 1)
-														)
-													)
-												}
-												required
-											/>
-											<Button
-												onClick={fetchCompanies}
-												disabled={isLoading || selectedSicCodes.length === 0}
-												className="whitespace-nowrap"
-											>
-												{isLoading ? 'Searching...' : 'Search Companies'}
-											</Button>
-										</div>
-									</div>
-									{hasSearched && (
-										<>
-											<div className="overflow-x-auto border border-gray-200 rounded-lg">
-												<table className="min-w-full divide-y divide-gray-200">
-													<thead className="bg-gray-50">
-														<tr>
-															<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-																Company
-															</th>
-															<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-																Number
-															</th>
-															<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-																Location
-															</th>
-															<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-																Incorporated
-															</th>
-															<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-																Actions
-															</th>
-														</tr>
-													</thead>
-													<tbody className="bg-white divide-y divide-gray-200">
-														{companies.map((company) => (
-															<tr
-																key={company.number}
-																className="hover:bg-gray-50"
-															>
-																<td className="px-6 py-4 whitespace-nowrap">
-																	<div className="text-sm font-medium text-gray-900">
-																		{company.name}
-																	</div>
-																</td>
-																<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-																	{company.number}
-																</td>
-																<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-																	{company.address?.locality ||
-																		company.address?.postal_code}
-																</td>
-																<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-																	{new Date(
-																		company.incorporationDate
-																	).toLocaleDateString()}
-																</td>
-																<td className="px-6 py-4 whitespace-nowrap text-sm">
-																	{/* Officer button removed */}
-																</td>
-															</tr>
-														))}
-													</tbody>
-												</table>
-											</div>
-											{/* Pagination */}
-											<div className="mt-4 flex justify-between items-center">
-												<div className="flex gap-2">
-													<Button
-														onClick={() => {
-															setCurrentPage((prev) => Math.max(0, prev - 1));
-															fetchCompanies();
-														}}
-														disabled={
-															currentPage === 0 ||
-															isLoading ||
-															isFetchingOfficers
-														}
-														variant="outline"
-														size="sm"
-													>
-														Previous
-													</Button>
-													<Button
-														onClick={() => {
-															setCurrentPage((prev) => prev + 1);
-															fetchCompanies();
-														}}
-														disabled={isLoading || isFetchingOfficers}
-														variant="outline"
-														size="sm"
-													>
-														Next
-													</Button>
-												</div>
-											</div>
-											{/* Fetch contacts button */}
-											<div className="mt-6 flex justify-start">
-												<Button
-													onClick={fetchAllOfficers}
-													disabled={isFetchingOfficers}
-													variant="default"
-												>
-													{isFetchingOfficers
-														? 'Fetching contacts...'
-														: 'Fetch the contacts'}
-												</Button>
-											</div>
-										</>
-									)}
-								</>
-							)}
-						</section>
+						<Step3CompanyResults
+							companies={companies}
+							selectedSicCodes={selectedSicCodes}
+							isLoading={isLoading}
+							isFetchingOfficers={isFetchingOfficers}
+							currentPage={currentPage}
+							totalResults={totalResults}
+							maxResults={maxResults}
+							hasSearched={hasSearched}
+							onMaxResultsChange={setMaxResults}
+							onSearchCompanies={fetchCompanies}
+							onPageChange={handlePageChange}
+							onFetchAllOfficers={fetchAllOfficers}
+						/>
 					)}
 
 					{/* Step 4: Company Officers */}
-					{showStep4 &&
-						companies.some(
-							(company) => company.officers && company.officers.length > 0
-						) && (
-							<section className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mt-6">
-								<div className="flex items-center justify-between mb-4">
-									<h2 className="text-2xl font-semibold text-gray-900">
-										Step 4: Company Officers
-									</h2>
-									<Button
-										variant="ghost"
-										size="sm"
-										onClick={() => setShowStep4((v) => !v)}
-									>
-										{showStep4 ? 'Close' : 'Open'}
-									</Button>
-								</div>
-								{isFetchingOfficers && (
-									<div className="mb-4 text-blue-600 font-medium">
-										Fetching officers for all companies...
-									</div>
-								)}
-								<div className="space-y-6">
-									{companies
-										.filter(
-											(company) =>
-												company.officers && company.officers.length > 0
-										)
-										.map((company) => (
-											<div
-												key={company.number}
-												className="border border-gray-200 rounded-lg overflow-hidden"
-											>
-												<div className="bg-gray-50 px-6 py-4">
-													<h3 className="text-lg font-medium text-gray-900">
-														{company.name}
-													</h3>
-												</div>
-												<div className="divide-y divide-gray-200">
-													{company.officers?.map((officer, index) => (
-														<div key={index} className="px-6 py-4">
-															<div className="flex justify-between items-start">
-																<div>
-																	<p className="font-medium text-gray-900">
-																		{officer.name}
-																	</p>
-																	<p className="text-sm text-gray-600">
-																		{officer.role}
-																		{officer.occupation &&
-																			` - ${officer.occupation}`}
-																	</p>
-																	{officer.nationality && (
-																		<p className="text-sm text-gray-500">
-																			{officer.nationality}
-																			{officer.countryOfResidence &&
-																				` (Resident in ${officer.countryOfResidence})`}
-																		</p>
-																	)}
-																</div>
-																<div className="text-sm text-gray-500">
-																	Appointed:{' '}
-																	{new Date(
-																		officer.appointedOn
-																	).toLocaleDateString()}
-																</div>
-															</div>
-														</div>
-													))}
-												</div>
-											</div>
-										))}
-								</div>
-								{/* Download CSV button */}
-								<div className="mt-6 flex justify-end">
-									<Button onClick={downloadOfficersCSV} variant="secondary">
-										Download CSV
-									</Button>
-								</div>
-							</section>
-						)}
+					<Step4CompanyOfficers
+						companies={companies}
+						isFetchingOfficers={isFetchingOfficers}
+						onEnrichOfficerData={enrichOfficerData}
+						isEnrichingContacts={isEnrichingContacts}
+						showStep4={showStep4}
+					/>
 
-					{/* Step 5: Seamless Integration will go here */}
+					{/* Step 5: Apollo Enrichment */}
+					<Step5ApolloEnrichment
+						enrichedOfficers={enrichedOfficers}
+						isEnrichingContacts={isEnrichingContacts}
+						showStep5={showStep5}
+					/>
 				</main>
 			</div>
 		</div>
