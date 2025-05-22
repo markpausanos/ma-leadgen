@@ -54,7 +54,7 @@ export default function Step3CompanyResults({
 				<>
 					<div className="mb-4 space-y-2">
 						<Label htmlFor="maxResults">
-							Maximum number of companies to search (max 100 for now):
+							Maximum number of companies to search (max 50000):
 						</Label>
 						<div className="flex gap-2">
 							<Input
