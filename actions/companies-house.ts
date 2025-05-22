@@ -59,17 +59,19 @@ interface OfficersResponse {
 export async function searchCompaniesBySicCodes(
 	sicCodes: string[],
 	page: number = 0,
-	maxResults: number = 100
+	maxResults: number = 50000
 ) {
 	try {
 		const authHeader = Buffer.from(COMPANIES_HOUSE_API_KEY + ':').toString(
 			'base64'
 		);
+		// Limit maxResults to 50000
+		const limitedMaxResults = Math.min(maxResults, 50000);
 
 		const queryParams = new URLSearchParams({
 			company_status: 'active',
-			size: Math.min(maxResults, 100).toString(),
-			start_index: (page * Math.min(maxResults, 100)).toString(),
+			size: limitedMaxResults.toString(),
+			start_index: (page * limitedMaxResults).toString(),
 			sic_codes: sicCodes.join(','),
 		});
 
