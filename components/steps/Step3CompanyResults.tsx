@@ -61,11 +61,11 @@ export default function Step3CompanyResults({
 								id="maxResults"
 								type="number"
 								min="1"
-								max="100"
+								max="50000"
 								value={maxResults}
 								onChange={(e) =>
 									onMaxResultsChange(
-										Math.min(100, Math.max(1, parseInt(e.target.value) || 1))
+										Math.min(50000, Math.max(1, parseInt(e.target.value) || 1))
 									)
 								}
 								required

@@ -47,7 +47,7 @@ export default function Step4CompanyOfficers({
 				</div>
 			)}
 
-			{isOpen && (
+			{isOpen && !isFetchingOfficers && (
 				<>
 					<div className="space-y-6">
 						{companies
