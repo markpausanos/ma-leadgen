@@ -68,30 +68,71 @@ export async function searchCompaniesBySicCodes(
 		// Limit maxResults to 50000
 		const limitedMaxResults = Math.min(maxResults, 50000);
 
-		const queryParams = new URLSearchParams({
-			company_status: 'active',
-			size: limitedMaxResults.toString(),
-			start_index: (page * limitedMaxResults).toString(),
-			sic_codes: sicCodes.join(','),
-		});
+		// Companies House API has a max limit of 5000 per request
+		const API_MAX_SIZE = 5000;
+		const batchSize = Math.min(API_MAX_SIZE, limitedMaxResults);
 
-		const response = await fetch(
-			`${COMPANIES_HOUSE_API_URL}/advanced-search/companies?${queryParams}`,
-			{
-				headers: {
-					Authorization: `Basic ${authHeader}`,
-					Accept: 'application/json',
-				},
-				cache: 'no-store',
+		// Calculate how many batches we need
+		const totalBatches = Math.ceil(limitedMaxResults / batchSize);
+		let allCompanies: CompanySearchResult[] = [];
+		let totalResultsCount = 0;
+
+		// Process each batch
+		for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+			// Calculate the start index for this batch
+			const batchStartIndex = page * limitedMaxResults + batchIndex * batchSize;
+
+			// If we've already collected enough results, break
+			if (allCompanies.length >= limitedMaxResults) break;
+
+			// Add delay between batches except for the first one
+			if (batchIndex > 0) {
+				await delay(RATE_LIMIT_DELAY);
 			}
-		);
 
-		if (!response.ok) {
-			throw new Error(`Companies House API error: ${response.status}`);
+			const queryParams = new URLSearchParams({
+				company_status: 'active',
+				size: batchSize.toString(),
+				start_index: batchStartIndex.toString(),
+				sic_codes: sicCodes.join(','),
+			});
+
+			const response = await fetch(
+				`${COMPANIES_HOUSE_API_URL}/advanced-search/companies?${queryParams}`,
+				{
+					headers: {
+						Authorization: `Basic ${authHeader}`,
+						Accept: 'application/json',
+					},
+					cache: 'no-store',
+				}
+			);
+
+			if (!response.ok) {
+				throw new Error(`Companies House API error: ${response.status}`);
+			}
+
+			const data: SearchCompaniesResponse = await response.json();
+
+			// Set total results from the first batch
+			if (batchIndex === 0) {
+				totalResultsCount = Math.min(
+					data.total_results || 0,
+					limitedMaxResults
+				);
+			}
+
+			// If no more results, break
+			if (!data.items || data.items.length === 0) break;
+
+			// Add results to our collection
+			allCompanies = [...allCompanies, ...data.items];
+
+			// If we've reached the end of available results, break
+			if (data.items.length < batchSize) break;
 		}
 
-		const data: SearchCompaniesResponse = await response.json();
-		const activeCompanies = data.items.filter(
+		const activeCompanies = allCompanies.filter(
 			(company) => company.company_status === 'active'
 		);
 
@@ -105,8 +146,8 @@ export async function searchCompaniesBySicCodes(
 				incorporationDate: company.date_of_creation,
 				sicCodes: company.sic_codes,
 			})),
-			totalResults: Math.min(data.total_results || 0, maxResults),
-			pageNumber: data.page_number,
+			totalResults: totalResultsCount,
+			pageNumber: page,
 		};
 	} catch (error) {
 		console.error('Error searching companies:', error);
