@@ -4,7 +4,7 @@ import { findRelevantSicCodes } from '@/actions/sicCodes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { SicCode } from '@/components/types';
+import { SicCode } from '@/lib/types';
 
 interface Step1SicSearchProps {
 	onSicCodesFound: (sicCodes: SicCode[]) => void;

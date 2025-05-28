@@ -2,7 +2,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { SicCode } from '@/components/types';
+import { SicCode } from '@/lib/types';
 
 interface Step2SicSelectionProps {
 	sicCodes: SicCode[];
@@ -27,17 +27,17 @@ export default function Step2SicSelection({
 			<div className="space-y-3">
 				{sicCodes.map((sic) => (
 					<div
-						key={sic.sic}
+						key={sic.code}
 						className="flex items-center p-4 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition"
-						onClick={() => onToggleSicCode(sic.sic)}
+						onClick={() => onToggleSicCode(sic.code)}
 					>
 						<Checkbox
-							id={`sic-${sic.sic}`}
-							checked={selectedSicCodes.includes(sic.sic)}
-							onCheckedChange={() => onToggleSicCode(sic.sic)}
+							id={`sic-${sic.code}`}
+							checked={selectedSicCodes.includes(sic.code)}
+							onCheckedChange={() => onToggleSicCode(sic.code)}
 						/>
 						<div className="ml-4">
-							<span className="font-medium text-gray-900">{sic.sic}</span>
+							<span className="font-medium text-gray-900">{sic.code}</span>
 							<span className="mx-2 text-gray-400">-</span>
 							<span className="text-gray-600">{sic.description}</span>
 						</div>
