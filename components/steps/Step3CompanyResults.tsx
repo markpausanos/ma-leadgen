@@ -3,7 +3,9 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Company } from '@/components/types';
+import { Company } from '@/lib/types';
+import { enrichPersonData } from '@/actions/leads';
+import { toast } from 'sonner';
 
 interface Step3CompanyResultsProps {
 	companies: Company[];
@@ -11,13 +13,12 @@ interface Step3CompanyResultsProps {
 	isLoading: boolean;
 	isFetchingOfficers: boolean;
 	currentPage: number;
-	totalResults: number;
 	maxResults: number;
 	hasSearched: boolean;
 	onMaxResultsChange: (value: number) => void;
 	onSearchCompanies: () => void;
 	onPageChange: (newPage: number) => void;
-	onFetchAllOfficers: () => void;
+	onReset: () => void;
 }
 
 export default function Step3CompanyResults({
@@ -26,15 +27,35 @@ export default function Step3CompanyResults({
 	isLoading,
 	isFetchingOfficers,
 	currentPage,
-	totalResults,
 	maxResults,
 	hasSearched,
 	onMaxResultsChange,
 	onSearchCompanies,
 	onPageChange,
-	onFetchAllOfficers,
+	onReset,
 }: Step3CompanyResultsProps) {
 	const [showStep3, setShowStep3] = useState(true);
+	const [isEnriching, setIsEnriching] = useState(false);
+
+	const handleEnrichment = async () => {
+		setIsEnriching(true);
+		try {
+			await enrichPersonData({
+				sic_codes: selectedSicCodes,
+				companies: companies,
+			});
+
+			toast(
+				"Queued enrichment, please come back later to the 'queries' to check results."
+			);
+
+			onReset();
+		} catch (error) {
+			toast.error('Failed to enrich data. Please try again.');
+		} finally {
+			setIsEnriching(false);
+		}
+	};
 
 	return (
 		<section className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
@@ -77,6 +98,15 @@ export default function Step3CompanyResults({
 							>
 								{isLoading ? 'Searching...' : 'Search Companies'}
 							</Button>
+							{hasSearched && companies.length > 0 && (
+								<Button
+									onClick={handleEnrichment}
+									disabled={isEnriching}
+									className="whitespace-nowrap"
+								>
+									{isEnriching ? 'Enriching...' : 'Enrich Data'}
+								</Button>
+							)}
 						</div>
 					</div>
 					{hasSearched && (
@@ -98,7 +128,7 @@ export default function Step3CompanyResults({
 												Incorporated
 											</th>
 											<th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-												Actions
+												Country
 											</th>
 										</tr>
 									</thead>
@@ -114,16 +144,15 @@ export default function Step3CompanyResults({
 													{company.number}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-													{company.address?.locality ||
-														company.address?.postal_code}
+													{company.addressLine1}
 												</td>
 												<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-													{new Date(
-														company.incorporationDate
-													).toLocaleDateString()}
+													{new Date(company.dateOfCreation).toLocaleDateString(
+														'en-GB'
+													)}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-sm">
-													{/* Officer button removed */}
+												<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+													{company.country}
 												</td>
 											</tr>
 										))}
@@ -152,18 +181,6 @@ export default function Step3CompanyResults({
 										Next
 									</Button>
 								</div>
-							</div>
-							{/* Fetch contacts button */}
-							<div className="mt-6 flex justify-start">
-								<Button
-									onClick={onFetchAllOfficers}
-									disabled={isFetchingOfficers}
-									variant="default"
-								>
-									{isFetchingOfficers
-										? 'Fetching contacts...'
-										: 'Fetch the contacts'}
-								</Button>
 							</div>
 						</>
 					)}

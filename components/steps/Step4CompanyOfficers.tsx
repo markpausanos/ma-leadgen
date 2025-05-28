@@ -1,7 +1,7 @@
 'use client';
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Company } from '@/components/types';
+import { Company } from '@/lib/types';
 
 interface Step4CompanyOfficersProps {
 	companies: Company[];
@@ -73,20 +73,22 @@ export default function Step4CompanyOfficers({
 															{officer.name}
 														</p>
 														<p className="text-sm text-gray-600">
-															{officer.role}
+															{officer.officer_type}
 															{officer.occupation && ` - ${officer.occupation}`}
 														</p>
 														{officer.nationality && (
 															<p className="text-sm text-gray-500">
 																{officer.nationality}
-																{officer.countryOfResidence &&
-																	` (Resident in ${officer.countryOfResidence})`}
+																{officer.country_of_residence &&
+																	` (Resident in ${officer.country_of_residence})`}
 															</p>
 														)}
 													</div>
 													<div className="text-sm text-gray-500">
 														Appointed:{' '}
-														{new Date(officer.appointedOn).toLocaleDateString()}
+														{new Date(
+															officer.appointed_on
+														).toLocaleDateString()}
 													</div>
 												</div>
 											</div>

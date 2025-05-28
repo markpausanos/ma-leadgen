@@ -1,6 +1,6 @@
 'use client';
 import React, { useState } from 'react';
-import { findRelevantSicCodes } from '@/actions/sic-codes';
+import { findRelevantSicCodes } from '@/actions/sicCodes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
