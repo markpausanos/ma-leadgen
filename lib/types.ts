@@ -39,7 +39,7 @@ export interface Officer {
 }
 
 export type SicCode = {
-	code: string;
+	sic: string;
 	description: string;
 };
 
