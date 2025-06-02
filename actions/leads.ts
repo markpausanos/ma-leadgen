@@ -1,9 +1,8 @@
 'use server';
 
 import { Company, Officer, Query } from '@/lib/types';
-import { createServerClient } from '@/lib/supabase';
 
-const BASE_URL = `${process.env.NEXT_PUBLIC_API_URL}/leads`;
+const BASE_URL = `${process.env.NEXT_PUBLIC_API_URL}`;
 
 export type GetLeadsRequest = {
 	sic_codes: string[];
@@ -14,7 +13,7 @@ export async function enrichPersonData(params: GetLeadsRequest) {
 	try {
 		console.log(params);
 
-		const response = await fetch(`${BASE_URL}`, {
+		const response = await fetch(`${BASE_URL}/leads`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -38,28 +37,47 @@ export async function enrichPersonData(params: GetLeadsRequest) {
 }
 
 export async function getQueries() {
-	const supabase = await createServerClient();
+	try {
+		const response = await fetch(`${BASE_URL}/queries`, {
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			cache: 'no-store',
+		});
 
-	const { data, error } = await supabase.from('Query').select('*');
+		const data = await response.json();
 
-	if (error) {
+		return data.queries ?? [];
+	} catch (error) {
 		console.error(error);
+		return [];
 	}
-
-	return data as Query[];
 }
 
 export async function getLeadsByQueryId(queryId: string) {
-	const supabase = await createServerClient();
+	try {
+		const response = await fetch(`${BASE_URL}/leads/${queryId}`, {
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+		});
 
-	const { data, error } = await supabase
-		.from('Officer')
-		.select('*')
-		.eq('queryId', queryId);
+		if (!response.ok) {
+			console.error(await response.text());
+			throw new Error('Failed to get leads');
+		}
 
-	if (error) {
+		const data = await response.json();
+
+		if (!data.leads) {
+			return [];
+		}
+
+		return data.leads;
+	} catch (error) {
 		console.error(error);
+		return [];
 	}
-
-	return data as Officer[];
 }

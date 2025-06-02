@@ -28,7 +28,7 @@ export default function QueriesPage() {
 		setIsLoading(true);
 		try {
 			const data = await getQueries();
-			console.log('data', data);
+
 			setQueries(data);
 		} catch (error) {
 			toast.error('Failed to fetch queries');
@@ -185,9 +185,10 @@ export default function QueriesPage() {
 							<h2 className="text-xl font-semibold mb-4">Queries</h2>
 							<ScrollArea className="h-[calc(100vh-24rem)]">
 								<div className="space-y-2 pr-4">
-									{queries.length === 0 ? (
+									{queries && queries.length === 0 ? (
 										<p className="text-gray-500">No queries found</p>
 									) : (
+										queries &&
 										queries.map((query) => (
 											<Button
 												key={query.id}
